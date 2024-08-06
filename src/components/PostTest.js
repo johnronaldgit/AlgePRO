@@ -20,6 +20,7 @@ function PostTest({ lessonNumber }) {
   const [isLoading, setIsLoading] = useState(true);
   const [didPass, setDidPass] = useState(null); // Updated state for passing status
   const [saving, setSaving] = useState(false); // Loading state for saving results
+  const [attempts, setAttempts] = useState(0); // State to track the number of attempts
 
   const navigate = useNavigate();
   const { setLoading, fetchUnlockedLessons } = useOutletContext(); // Get setLoading and fetchUnlockedLessons from context
@@ -38,6 +39,7 @@ function PostTest({ lessonNumber }) {
           setHasCompletedPostTest(true);
           setCompletedTestData(data.post_test_score);
           setDidPass(data.didPass);
+          setAttempts(data.attempts || 0); // Set attempts from fetched data
           if (!data.didPass) {
             setIsFinished(true); // Set isFinished to true if the user failed the test
           }
@@ -136,13 +138,18 @@ function PostTest({ lessonNumber }) {
 
       try {
         setSaving(true);
+        const postTestDoc = await getDoc(scoresRef);
+        const newAttempts = (postTestDoc.exists() && postTestDoc.data().attempts ? postTestDoc.data().attempts : 0) + 1; // Increment attempts
         await setDoc(scoresRef, {
           post_test_score: score,
           didPass: passed, // Save pass/fail status
-          knowledgeLevel: knowledgeLevel // Save knowledge level
+          knowledgeLevel: knowledgeLevel, // Save knowledge level
+          attempts: newAttempts // Save the number of attempts
         }, { merge: true });
 
         console.log('Post-test score saved successfully');
+
+        setAttempts(newAttempts); // Update the state with the new attempts count
 
         // Unlock the next lesson if passed
         if (passed) {
@@ -222,6 +229,7 @@ function PostTest({ lessonNumber }) {
       <div>
         <h2 className="text-2xl font-bold">Test Completed</h2>
         <p className="mt-4">Total Score: {score} out of 5</p>
+        <p className="mt-2">Number of Attempts: {attempts}</p> {/* Display number of attempts */}
       </div>
     );
   };
