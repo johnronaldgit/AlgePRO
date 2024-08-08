@@ -21,9 +21,12 @@ function PostTest({ lessonNumber }) {
   const [didPass, setDidPass] = useState(null); // Updated state for passing status
   const [saving, setSaving] = useState(false); // Loading state for saving results
   const [attempts, setAttempts] = useState(0); // State to track the number of attempts
+  const [practiced, setPracticed] = useState(false); // State to track if the user has practiced questions
 
   const navigate = useNavigate();
   const { setLoading, fetchUnlockedLessons } = useOutletContext(); // Get setLoading and fetchUnlockedLessons from context
+
+  const MAX_ATTEMPTS = 3; // Maximum number of attempts allowed
 
   useEffect(() => {
     const fetchData = async () => {
@@ -66,6 +69,8 @@ function PostTest({ lessonNumber }) {
     setIsSubmitted(false);
     setShowConfirmation(true);
     setDidPass(null);
+    setAttempts(0); // Reset attempts for the new lesson
+    setPracticed(localStorage.getItem(`practiced_lesson_${lessonNumber}`) === 'true'); // Load practiced state from local storage
     fetchData();
   }, [lessonNumber]);
 
@@ -189,6 +194,12 @@ function PostTest({ lessonNumber }) {
     setSubmittedAnswers([]); // Reset submitted answers
   };
 
+  const handlePracticeQuestions = () => {
+    setPracticed(true); // Set practiced state to true
+    localStorage.setItem(`practiced_lesson_${lessonNumber}`, 'true'); // Persist practiced state in local storage
+    navigate(`/lesson/${lessonNumber}/practice`);
+  };
+
   const renderQuestion = () => {
     const question = lessonQuestions[currentQuestionIndex];
     const isCorrect = isSubmitted && answers[currentQuestionIndex]?.trim() === question.correctAnswer.trim();
@@ -242,6 +253,26 @@ function PostTest({ lessonNumber }) {
     );
   }
 
+  if (attempts >= MAX_ATTEMPTS && !didPass) {
+    return (
+      <div className="bg-red-200 p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-bold">Maximum Attempts Reached</h2>
+        <p className="mt-4">You have reached the maximum number of attempts for the post-test of Lesson {lessonNumber}.</p>
+        <p className="mt-2">Please review the lesson materials and practice questions to improve your understanding.</p>
+        <div className="mt-6 flex justify-between">
+          {parseInt(lessonNumber) < 5 && (
+            <button
+              onClick={() => navigate(`/lesson/${parseInt(lessonNumber) + 1}/pre-test`)}
+              className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
+            >
+              Next Lesson
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (isFinished && didPass === false) {
     return (
       <div className="bg-red-200 p-6 rounded-lg shadow-md">
@@ -251,23 +282,19 @@ function PostTest({ lessonNumber }) {
         <p className="mt-2">You need to score at least 4 out of 5 to pass.</p>
         <div className="mt-6 flex justify-between">
           <button
-            onClick={() => navigate(`/lesson/${lessonNumber}/subtopic/1`)}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-          >
-            Review Lesson
-          </button>
-          <button
-            onClick={() => navigate(`/lesson/${lessonNumber}/practice`)}
+            onClick={handlePracticeQuestions}
             className="px-4 py-2 bg-yellow-500 text-black rounded-md hover:bg-yellow-600"
           >
             Practice Questions
           </button>
-          <button
-            onClick={handleRetakeTest}
-            className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
-          >
-            Take Post-Test Again
-          </button>
+          {practiced && (
+            <button
+              onClick={handleRetakeTest}
+              className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
+            >
+              Take Post-Test Again
+            </button>
+          )}
         </div>
       </div>
     );

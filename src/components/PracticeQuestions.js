@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import MathJax from 'react-mathjax2';
 import { db, auth } from '../firebaseConfig';
-import { doc, getDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, updateDoc } from 'firebase/firestore';
 import questions from '../practice_questions.json'; // Import questions from the separate file
 import FloatingButton from './FloatingButton'; // Import FloatingButton
 
@@ -15,10 +15,12 @@ function PracticeQuestions({ lessonNumber }) {
   const [correctCount, setCorrectCount] = useState(0);
   const [knowledgeLevel, setKnowledgeLevel] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [remainingQuestions, setRemainingQuestions] = useState([]);
   const [floatingButtonDisabled, setFloatingButtonDisabled] = useState(true); // State to manage FloatingButton
   const floatingButtonRef = useRef(null); // Reference to FloatingButton
   const [showHelpButton, setShowHelpButton] = useState(true); // State to manage "Ask for Help?" button visibility
+  const [currentDifficulty, setCurrentDifficulty] = useState('Beginner'); // Track current difficulty level
+  const [loadingDifficulty, setLoadingDifficulty] = useState(false); // State to manage loading difficulty
+  const [loadingNextQuestion, setLoadingNextQuestion] = useState(false); // State to manage loading state for next question
 
   const fetchKnowledgeLevel = useCallback(async () => {
     const user = auth.currentUser;
@@ -31,6 +33,7 @@ function PracticeQuestions({ lessonNumber }) {
         const scoresDoc = await getDoc(scoresRef);
         if (scoresDoc.exists()) {
           setKnowledgeLevel(scoresDoc.data().knowledgeLevel);
+          setCurrentDifficulty(scoresDoc.data().knowledgeLevel); // Set currentDifficulty to knowledgeLevel initially
         }
       } catch (error) {
         console.error('Error fetching knowledge level:', error);
@@ -45,17 +48,16 @@ function PracticeQuestions({ lessonNumber }) {
   }, [fetchKnowledgeLevel]);
 
   const initializeQuestions = useCallback(() => {
-    let selectedQuestions = [];
-    if (knowledgeLevel === 'Beginner') {
-      selectedQuestions = questions[`lesson${lessonNumber}`].beginner.map(q => ({ ...q, difficulty: 'BEGINNER' }));
-    } else if (knowledgeLevel === 'Intermediate') {
-      selectedQuestions = questions[`lesson${lessonNumber}`].intermediate.map(q => ({ ...q, difficulty: 'INTERMEDIATE' }));
-    } else if (knowledgeLevel === 'Advanced') {
-      selectedQuestions = questions[`lesson${lessonNumber}`].advanced.map(q => ({ ...q, difficulty: 'ADVANCED' }));
+    if (knowledgeLevel) {
+      const selectedQuestions = [
+        ...questions[`lesson${lessonNumber}`].beginner.map(q => ({ ...q, difficulty: 'Beginner' })),
+        ...questions[`lesson${lessonNumber}`].intermediate.map(q => ({ ...q, difficulty: 'Intermediate' })),
+        ...questions[`lesson${lessonNumber}`].advanced.map(q => ({ ...q, difficulty: 'Advanced' })),
+      ];
+      shuffleArray(selectedQuestions);
+      const firstQuestion = selectedQuestions.find(q => q.difficulty === knowledgeLevel) || selectedQuestions[0];
+      setCurrentQuestion(firstQuestion);
     }
-    shuffleArray(selectedQuestions);
-    setRemainingQuestions(selectedQuestions.slice(0, 5)); // Select the first 5 questions after shuffling
-    setCurrentQuestion(selectedQuestions[0]);
   }, [knowledgeLevel, lessonNumber]);
 
   useEffect(() => {
@@ -79,7 +81,7 @@ function PracticeQuestions({ lessonNumber }) {
     setIsSubmitEnabled(true);
   };
 
-  const handleSubmitAnswer = () => {
+  const handleSubmitAnswer = async () => {
     const isCorrect = answers[currentQuestion.question]?.trim() === currentQuestion.correctAnswer.trim();
     setSubmittedAnswers((prevSubmitted) => [
       ...prevSubmitted,
@@ -93,19 +95,125 @@ function PracticeQuestions({ lessonNumber }) {
       setCorrectCount((prevCount) => prevCount + 1);
       setShowHelpButton(false); // Hide "Ask for Help?" button if the answer is correct
     }
+
+    await updateAndFetchDifficulty(isCorrect);
   };
 
-  const handleNextQuestion = () => {
-    const newRemainingQuestions = remainingQuestions.slice(1);
-    setRemainingQuestions(newRemainingQuestions);
-    setCurrentQuestion(newRemainingQuestions[0]);
+  const handleNextQuestion = async () => {
+    setLoadingNextQuestion(true); // Start loading state for next question
+
+    const latestDifficulty = await fetchCurrentDifficultyContinuously(6); // Fetch the currentDifficulty continuously for 6 seconds
+    setCurrentDifficulty(latestDifficulty);
+
+    // Wait for an additional 6 seconds to ensure the correct question is fetched based on the latest currentDifficulty
+    await new Promise(resolve => setTimeout(resolve, 6000));
+
+    const selectedQuestions = [
+      ...questions[`lesson${lessonNumber}`].beginner.map(q => ({ ...q, difficulty: 'Beginner' })),
+      ...questions[`lesson${lessonNumber}`].intermediate.map(q => ({ ...q, difficulty: 'Intermediate' })),
+      ...questions[`lesson${lessonNumber}`].advanced.map(q => ({ ...q, difficulty: 'Advanced' })),
+    ];
+
+    const newQuestion = selectedQuestions.find(q => q.difficulty === latestDifficulty);
+    shuffleArray(selectedQuestions);
+
+    if (!newQuestion || submittedAnswers.length >= 4) {
+      setIsFinished(true);
+      setLoadingNextQuestion(false); // Stop loading state when finished
+      return;
+    }
+
+    setCurrentQuestion(newQuestion);
     setIsSubmitted(false);
     setIsSubmitEnabled(false);
     setFloatingButtonDisabled(true); // Disable FloatingButton when moving to the next question
+    setLoadingNextQuestion(false); // Stop loading state after fetching current difficulty
+  };
 
-    if (newRemainingQuestions.length === 0) {
-      setIsFinished(true);
+  const updateAndFetchDifficulty = async (isCorrect) => {
+    adjustDifficulty(isCorrect);
+    await fetchCurrentDifficultyFromFirebase();
+  };
+
+  const adjustDifficulty = (isCorrect) => {
+    let newDifficulty = currentDifficulty;
+    if (isCorrect) {
+      switch (currentDifficulty) {
+        case 'Intermediate':
+          newDifficulty = 'Advanced';
+          break;
+        case 'Beginner':
+          newDifficulty = 'Intermediate';
+          break;
+      }
+    } else {
+      switch (currentDifficulty) {
+        case 'Advanced':
+          newDifficulty = 'Intermediate';
+          break;
+        case 'Intermediate':
+          newDifficulty = 'Beginner';
+          break;
+      }
     }
+    setCurrentDifficulty(newDifficulty);
+    saveDifficultyToFirebase(newDifficulty); // Save the new difficulty to Firebase
+  };
+
+  // Function to save the currentDifficulty to Firebase
+  const saveDifficultyToFirebase = async (newDifficulty) => {
+    const user = auth.currentUser;
+    if (user) {
+      const userEmail = user.email;
+      const lesson = `lesson${lessonNumber}`;
+      const scoresRef = doc(db, 'users', userEmail, 'scores', lesson);
+
+      try {
+        await updateDoc(scoresRef, {
+          currentDifficulty: newDifficulty,
+        });
+      } catch (error) {
+        console.error('Error saving difficulty to Firebase:', error);
+      }
+    }
+  };
+
+  // Function to fetch the currentDifficulty from Firebase continuously for 6 seconds
+  const fetchCurrentDifficultyContinuously = async (duration) => {
+    const endTime = Date.now() + duration * 1000;
+    let latestDifficulty = currentDifficulty;
+
+    while (Date.now() < endTime) {
+      const difficulty = await fetchCurrentDifficultyFromFirebase();
+      if (difficulty) {
+        latestDifficulty = difficulty;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second
+    }
+
+    return latestDifficulty;
+  };
+
+  // Function to fetch the currentDifficulty from Firebase
+  const fetchCurrentDifficultyFromFirebase = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      const userEmail = user.email;
+      const lesson = `lesson${lessonNumber}`;
+      const scoresRef = doc(db, 'users', userEmail, 'scores', lesson);
+
+      try {
+        const scoresDoc = await getDoc(scoresRef);
+        if (scoresDoc.exists()) {
+          const fetchedDifficulty = scoresDoc.data().currentDifficulty;
+          setCurrentDifficulty(fetchedDifficulty);
+          return fetchedDifficulty;
+        }
+      } catch (error) {
+        console.error('Error fetching current difficulty:', error);
+      }
+    }
+    return null;
   };
 
   const handleAskForHelp = async () => {
@@ -277,7 +385,7 @@ function PracticeQuestions({ lessonNumber }) {
     );
   };
 
-  if (isLoading) {
+  if (isLoading || loadingDifficulty || loadingNextQuestion) {
     return (
       <div className="bg-blue-200 p-6 rounded-lg shadow-md">
         <h2 className="text-2xl font-bold">Loading...</h2>
