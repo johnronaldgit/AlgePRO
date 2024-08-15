@@ -23,6 +23,7 @@ function PracticeQuestions({ lessonNumber }) {
   const [loadingDifficulty, setLoadingDifficulty] = useState(false); // State to manage loading difficulty
   const [loadingNextQuestion, setLoadingNextQuestion] = useState(false); // State to manage loading state for next question
   const [showConfirmation, setShowConfirmation] = useState(true); // State to manage the display of confirmation dialog
+  const [answeredQuestions, setAnsweredQuestions] = useState([]); // State to track answered questions
 
   const navigate = useNavigate(); // Add useNavigate hook
 
@@ -92,6 +93,7 @@ function PracticeQuestions({ lessonNumber }) {
       { question: currentQuestion, answer: answers[currentQuestion.question], isCorrect },
     ]);
     setIsSubmitted(true);
+    setAnsweredQuestions((prevAnswered) => [...prevAnswered, currentQuestion.question]); // Track answered questions
     if (!isCorrect) {
       setFloatingButtonDisabled(false); // Enable FloatingButton if the answer is incorrect
       setShowHelpButton(true); // Show "Ask for Help?" button
@@ -118,10 +120,10 @@ function PracticeQuestions({ lessonNumber }) {
       ...questions[`lesson${lessonNumber}`].advanced.map(q => ({ ...q, difficulty: 'Advanced' })),
     ];
 
-    const newQuestion = selectedQuestions.find(q => q.difficulty === latestDifficulty);
     shuffleArray(selectedQuestions);
+    const newQuestion = selectedQuestions.find(q => q.difficulty === latestDifficulty && !answeredQuestions.includes(q.question));
 
-    if (!newQuestion || submittedAnswers.length >= 4) {
+    if (!newQuestion || submittedAnswers.length >= 5) { // Ensure 5 questions
       await saveDifficultyToFirebase(currentDifficulty, 'Completed'); // Save the practice state as 'Completed'
       setIsFinished(true);
       setLoadingNextQuestion(false); // Stop loading state when finished
