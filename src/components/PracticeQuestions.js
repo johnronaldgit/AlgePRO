@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MathJax from 'react-mathjax2';
 import { db, auth } from '../firebaseConfig';
 import { doc, getDoc, collection, addDoc, updateDoc } from 'firebase/firestore';
@@ -21,6 +22,9 @@ function PracticeQuestions({ lessonNumber }) {
   const [currentDifficulty, setCurrentDifficulty] = useState('Beginner'); // Track current difficulty level
   const [loadingDifficulty, setLoadingDifficulty] = useState(false); // State to manage loading difficulty
   const [loadingNextQuestion, setLoadingNextQuestion] = useState(false); // State to manage loading state for next question
+  const [showConfirmation, setShowConfirmation] = useState(true); // State to manage the display of confirmation dialog
+
+  const navigate = useNavigate(); // Add useNavigate hook
 
   const fetchKnowledgeLevel = useCallback(async () => {
     const user = auth.currentUser;
@@ -118,6 +122,7 @@ function PracticeQuestions({ lessonNumber }) {
     shuffleArray(selectedQuestions);
 
     if (!newQuestion || submittedAnswers.length >= 4) {
+      await saveDifficultyToFirebase(currentDifficulty, 'Completed'); // Save the practice state as 'Completed'
       setIsFinished(true);
       setLoadingNextQuestion(false); // Stop loading state when finished
       return;
@@ -160,8 +165,8 @@ function PracticeQuestions({ lessonNumber }) {
     saveDifficultyToFirebase(newDifficulty); // Save the new difficulty to Firebase
   };
 
-  // Function to save the currentDifficulty to Firebase
-  const saveDifficultyToFirebase = async (newDifficulty) => {
+  // Function to save the currentDifficulty and practiceState to Firebase
+  const saveDifficultyToFirebase = async (newDifficulty, practiceState = null) => {
     const user = auth.currentUser;
     if (user) {
       const userEmail = user.email;
@@ -169,11 +174,17 @@ function PracticeQuestions({ lessonNumber }) {
       const scoresRef = doc(db, 'users', userEmail, 'scores', lesson);
 
       try {
-        await updateDoc(scoresRef, {
+        const updateData = {
           currentDifficulty: newDifficulty,
-        });
+        };
+
+        if (practiceState) {
+          updateData.practiceState = practiceState;
+        }
+
+        await updateDoc(scoresRef, updateData);
       } catch (error) {
-        console.error('Error saving difficulty to Firebase:', error);
+        console.error('Error saving data to Firebase:', error);
       }
     }
   };
@@ -281,6 +292,10 @@ function PracticeQuestions({ lessonNumber }) {
     }
   };
 
+  const handlePostTestClick = () => {
+    navigate(`/lesson/${lessonNumber}/post-test`);
+  };
+
   const renderQuestion = () => {
     if (!currentQuestion) return null;
 
@@ -379,6 +394,14 @@ function PracticeQuestions({ lessonNumber }) {
                 </li>
               ))}
             </ul>
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={handlePostTestClick}
+                className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+              >
+                Take Post-Test
+              </button>
+            </div>
           </div>
         </div>
       </MathJax.Context>
@@ -397,6 +420,29 @@ function PracticeQuestions({ lessonNumber }) {
     return (
       <div className="bg-blue-200 p-6 rounded-lg shadow-md">
         <h2 className="text-2xl font-bold">No Knowledge Level Found</h2>
+      </div>
+    );
+  }
+
+  if (showConfirmation) {
+    return (
+      <div className="bg-blue-200 p-6 rounded-lg shadow-md">
+        <h2 className="text-2xl font-bold">Practice Questions Confirmation</h2>
+        <p className="mt-4">Do you want to start the practice questions for Lesson {lessonNumber}?</p>
+        <div className="mt-6 flex justify-between">
+          <button
+            onClick={() => setShowConfirmation(false)}
+            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+          >
+            Yes, start practice questions
+          </button>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+          >
+            No, go back
+          </button>
+        </div>
       </div>
     );
   }

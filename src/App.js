@@ -9,7 +9,6 @@ import Subtopic from './components/Subtopic';
 import PreTest from './components/PreTest';
 import PostTest from './components/PostTest';
 import Layout from './components/Layout';
-import FloatingButton from './components/FloatingButton';
 import PracticeQuestions from './components/PracticeQuestions';
 import About from './components/About'; // Import the About component
 import Help from './components/Help'; // Import the Help component
@@ -90,7 +89,6 @@ function App() {
           ))}
         </Route>
       </Routes>
-      <FloatingButton /> {/* Include FloatingButton here */}
     </Router>
   );
 }

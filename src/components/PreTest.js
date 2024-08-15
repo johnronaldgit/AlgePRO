@@ -86,12 +86,13 @@ function PreTest({ lessonNumber }) {
 
       try {
         await setDoc(scoresRef, {
-          pre_test_scores: correctCount
+          pre_test_scores: correctCount,
+          knowledgeLevel: 'Beginner' // Set the knowledge level to Beginner after pre-test
         }, { merge: true });
 
-        console.log('Pre-test score saved successfully');
+        console.log('Pre-test score and knowledge level saved successfully');
       } catch (error) {
-        console.error('Error saving pre-test score:', error);
+        console.error('Error saving pre-test score and knowledge level:', error);
       }
     }
   };

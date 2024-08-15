@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import MathJax from 'react-mathjax2';
 import { db, auth } from '../firebaseConfig';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import postQuestions from '../postQuestions'; // Import post-test questions from the separate file
 
@@ -22,11 +22,11 @@ function PostTest({ lessonNumber }) {
   const [saving, setSaving] = useState(false); // Loading state for saving results
   const [attempts, setAttempts] = useState(0); // State to track the number of attempts
   const [practiced, setPracticed] = useState(false); // State to track if the user has practiced questions
+  const [preTestScore, setPreTestScore] = useState(null); // State to store pre-test score
+  const [practiceState, setPracticeState] = useState(null); // State to store practice state
 
   const navigate = useNavigate();
   const { setLoading, fetchUnlockedLessons } = useOutletContext(); // Get setLoading and fetchUnlockedLessons from context
-
-  const MAX_ATTEMPTS = 3; // Maximum number of attempts allowed
 
   useEffect(() => {
     const fetchData = async () => {
@@ -37,21 +37,31 @@ function PostTest({ lessonNumber }) {
         const postTestDocRef = doc(db, 'users', userEmail, 'scores', lesson);
 
         const postTestDoc = await getDoc(postTestDocRef);
-        if (postTestDoc.exists() && postTestDoc.data().post_test_score !== undefined) {
+        if (postTestDoc.exists()) {
           const data = postTestDoc.data();
-          setHasCompletedPostTest(true);
-          setCompletedTestData(data.post_test_score);
-          setDidPass(data.didPass);
-          setAttempts(data.attempts || 0); // Set attempts from fetched data
-          if (!data.didPass) {
-            setIsFinished(true); // Set isFinished to true if the user failed the test
+          if (data.post_test_score !== undefined) {
+            setHasCompletedPostTest(true);
+            setCompletedTestData(data.post_test_score);
+            setDidPass(data.didPass);
+            setAttempts(data.attempts || 0); // Set attempts from fetched data
+            if (!data.didPass) {
+              setIsFinished(true); // Set isFinished to true if the user failed the test
+            }
+            // Set correct and incorrect counts from fetched data
+            setCorrectCount(data.post_test_score);
+            setIncorrectCount(5 - data.post_test_score);
+          } else {
+            setHasCompletedPostTest(false);
+            setCompletedTestData(null);
           }
-          // Set correct and incorrect counts from fetched data
-          setCorrectCount(data.post_test_score);
-          setIncorrectCount(5 - data.post_test_score);
-        } else {
-          setHasCompletedPostTest(false);
-          setCompletedTestData(null);
+          // Fetch practice state
+          if (data.practiceState) {
+            setPracticeState(data.practiceState);
+          }
+          // Fetch pre-test score
+          if (data.pre_test_scores !== undefined) {
+            setPreTestScore(data.pre_test_scores);
+          }
         }
       }
       setIsLoading(false);
@@ -122,15 +132,20 @@ function PostTest({ lessonNumber }) {
     setIncorrectCount(incorrect);
   };
 
-  const determineKnowledgeLevel = (score) => {
-    if (score >= 0 && score <= 1) {
+  const determineKnowledgeLevel = (preTestScore, postTestScore) => {
+    if (postTestScore <= 2) {
       return 'Beginner';
-    } else if (score >= 2 && score <= 3) {
+    }
+    if (preTestScore <= 2 && postTestScore >= 3) {
       return 'Intermediate';
-    } else if (score >= 4 && score <= 5) {
+    }
+    if (preTestScore >= 3 && postTestScore >= 4) {
       return 'Advanced';
     }
-    return null;
+    if (preTestScore >= 3 && postTestScore == 3) {
+      return 'Intermediate';
+    }
+    return 'Beginner';
   };
 
   const saveScore = async (passed, score) => {
@@ -139,7 +154,7 @@ function PostTest({ lessonNumber }) {
       const userEmail = user.email;
       const lesson = `lesson${lessonNumber}`;
       const scoresRef = doc(db, 'users', userEmail, 'scores', lesson);
-      const knowledgeLevel = determineKnowledgeLevel(score);
+      const knowledgeLevel = determineKnowledgeLevel(preTestScore, score);
 
       try {
         setSaving(true);
@@ -155,6 +170,14 @@ function PostTest({ lessonNumber }) {
         console.log('Post-test score saved successfully');
 
         setAttempts(newAttempts); // Update the state with the new attempts count
+
+        // If the user failed, reset the practice state
+        if (!passed) {
+          await updateDoc(scoresRef, {
+            practiceState: null
+          });
+          setPracticeState(null); // Reset the local state as well
+        }
 
         // Unlock the next lesson if passed
         if (passed) {
@@ -186,18 +209,23 @@ function PostTest({ lessonNumber }) {
   };
 
   const handleRetakeTest = () => {
-    setDidPass(null); // Reset pass status
-    setIsFinished(false); // Allow retaking the post-test
-    setCurrentQuestionIndex(0); // Restart the test
-    setShowConfirmation(true); // Show confirmation again before retaking the test
-    setAnswers([]); // Reset answers
-    setSubmittedAnswers([]); // Reset submitted answers
+    // Reset necessary state and navigate to post-test confirmation
+    setCurrentQuestionIndex(0);
+    setAnswers([]);
+    setSubmittedAnswers([]);
+    setIsFinished(false);
+    setCorrectCount(0);
+    setIncorrectCount(0);
+    setIsSubmitEnabled(false);
+    setIsSubmitted(false);
+    setShowConfirmation(true);
+    setDidPass(null);
+    setAttempts(attempts + 1);
+    navigate(`/lesson/${lessonNumber}/post-test`);
   };
 
-  const handlePracticeQuestions = () => {
-    setPracticed(true); // Set practiced state to true
-    localStorage.setItem(`practiced_lesson_${lessonNumber}`, 'true'); // Persist practiced state in local storage
-    navigate(`/lesson/${lessonNumber}/practice`);
+  const handleReturnToLesson = () => {
+    navigate(`/lesson/${lessonNumber}/subtopic/1`);
   };
 
   const renderQuestion = () => {
@@ -253,26 +281,6 @@ function PostTest({ lessonNumber }) {
     );
   }
 
-  if (attempts >= MAX_ATTEMPTS && !didPass) {
-    return (
-      <div className="bg-red-200 p-6 rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold">Maximum Attempts Reached</h2>
-        <p className="mt-4">You have reached the maximum number of attempts for the post-test of Lesson {lessonNumber}.</p>
-        <p className="mt-2">Please review the lesson materials and practice questions to improve your understanding.</p>
-        <div className="mt-6 flex justify-between">
-          {parseInt(lessonNumber) < 5 && (
-            <button
-              onClick={() => navigate(`/lesson/${parseInt(lessonNumber) + 1}/pre-test`)}
-              className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
-            >
-              Next Lesson
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   if (isFinished && didPass === false) {
     return (
       <div className="bg-red-200 p-6 rounded-lg shadow-md">
@@ -282,19 +290,11 @@ function PostTest({ lessonNumber }) {
         <p className="mt-2">You need to score at least 4 out of 5 to pass.</p>
         <div className="mt-6 flex justify-between">
           <button
-            onClick={handlePracticeQuestions}
-            className="px-4 py-2 bg-yellow-500 text-black rounded-md hover:bg-yellow-600"
+            onClick={practiceState === 'Completed' ? handleRetakeTest : handleReturnToLesson}
+            className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
           >
-            Practice Questions
+            {practiceState === 'Completed' ? 'Take Post-Test Again' : 'Return to Lesson'}
           </button>
-          {practiced && (
-            <button
-              onClick={handleRetakeTest}
-              className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
-            >
-              Take Post-Test Again
-            </button>
-          )}
         </div>
       </div>
     );
@@ -376,6 +376,16 @@ function PostTest({ lessonNumber }) {
           )}
         </div>
       </section>
+      {didPass === false && (
+        <div className="mt-6 flex justify-center">
+          <button
+            onClick={practiceState === 'Completed' ? handleRetakeTest : handleReturnToLesson}
+            className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
+          >
+            {practiceState === 'Completed' ? 'Take Post-Test Again' : 'Return to Lesson'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

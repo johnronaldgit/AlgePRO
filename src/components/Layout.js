@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { auth, db } from '../firebaseConfig';
 import { getDoc, doc } from 'firebase/firestore';
-import { ChevronDownIcon, ChevronRightIcon, HomeIcon, BookOpenIcon, BoltIcon, DocumentTextIcon, LockClosedIcon } from '@heroicons/react/20/solid';
+import { ChevronDownIcon, ChevronRightIcon, HomeIcon, BookOpenIcon, BoltIcon, DocumentTextIcon, LockClosedIcon, QuestionMarkCircleIcon } from '@heroicons/react/20/solid';
 import 'tailwindcss/tailwind.css';
 import Navbar from './Navbar';
 import FloatingButton from './FloatingButton';
@@ -37,6 +37,7 @@ function Layout() {
   const [userEmail, setUserEmail] = useState(null);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [unlockedLessons, setUnlockedLessons] = useState([1]); // Initially unlock the first lesson
+  const [preTestCompletion, setPreTestCompletion] = useState({});
   const [loading, setLoading] = useState(false); // Add a loading state
 
   useEffect(() => {
@@ -44,6 +45,7 @@ function Layout() {
       if (user) {
         setUserEmail(user.email);
         fetchUnlockedLessons(user.email);
+        fetchPreTestCompletion(user.email);
       } else {
         navigate('/login');
       }
@@ -63,6 +65,25 @@ function Layout() {
       }
     } catch (error) {
       console.error('Error fetching unlocked lessons:', error);
+    }
+  };
+
+  const fetchPreTestCompletion = async (email) => {
+    try {
+      const preTestStatus = {};
+      for (const lesson of lessons) {
+        const lessonKey = `lesson${lesson.number}`;
+        const preTestDocRef = doc(db, 'users', email, 'scores', lessonKey);
+        const preTestDocSnap = await getDoc(preTestDocRef);
+        if (preTestDocSnap.exists() && preTestDocSnap.data().pre_test_scores !== undefined) {
+          preTestStatus[lesson.number] = true;
+        } else {
+          preTestStatus[lesson.number] = false;
+        }
+      }
+      setPreTestCompletion(preTestStatus);
+    } catch (error) {
+      console.error('Error fetching pre-test completion status:', error);
     }
   };
 
@@ -127,14 +148,32 @@ function Layout() {
                         </li>
                         {lesson.subtopics.map((subtopic, subIndex) => (
                           <li key={subIndex} className={`mb-2 ${isActive(`/lesson/${getLessonPath(lesson.number)}/subtopic/${subIndex + 1}`) ? 'bg-[#D7A700] rounded-lg opacity-75 p-2 text-black' : ''}`}>
-                            <Link to={`/lesson/${getLessonPath(lesson.number)}/subtopic/${subIndex + 1}`} className={`flex items-center hover:text-white ${isActive(`/lesson/${getLessonPath(lesson.number)}/subtopic/${subIndex + 1}`) ? 'text-black' : ''}`}>
+                            <Link
+                              to={`/lesson/${getLessonPath(lesson.number)}/subtopic/${subIndex + 1}`}
+                              className={`flex items-center hover:text-white ${isActive(`/lesson/${getLessonPath(lesson.number)}/subtopic/${subIndex + 1}`) ? 'text-black' : preTestCompletion[lesson.number] ? '' : 'text-gray-400 cursor-not-allowed'}`}
+                              onClick={(e) => !preTestCompletion[lesson.number] && e.preventDefault()}
+                            >
                               <DocumentTextIcon className="w-5 h-5 mr-2 flex-shrink-0" />
                               {subtopic}
                             </Link>
                           </li>
                         ))}
+                        <li className={`mb-2 ${isActive(`/lesson/${getLessonPath(lesson.number)}/practice`) ? 'bg-[#D7A700] rounded-lg opacity-75 p-2 text-black' : ''}`}>
+                          <Link
+                            to={`/lesson/${getLessonPath(lesson.number)}/practice`}
+                            className={`flex items-center hover:text-white ${isActive(`/lesson/${getLessonPath(lesson.number)}/practice`) ? 'text-black' : preTestCompletion[lesson.number] ? '' : 'text-gray-400 cursor-not-allowed'}`}
+                            onClick={(e) => !preTestCompletion[lesson.number] && e.preventDefault()}
+                          >
+                            <QuestionMarkCircleIcon className="w-5 h-5 mr-2 flex-shrink-0" />
+                            Practice Questions
+                          </Link>
+                        </li>
                         <li className={`mb-2 ${isActive(`/lesson/${getLessonPath(lesson.number)}/post-test`) ? 'bg-[#D7A700] rounded-lg opacity-75 p-2 text-black' : ''}`}>
-                          <Link to={`/lesson/${getLessonPath(lesson.number)}/post-test`} className={`flex items-center hover:text-white ${isActive(`/lesson/${getLessonPath(lesson.number)}/post-test`) ? 'text-black' : ''}`}>
+                          <Link
+                            to={`/lesson/${getLessonPath(lesson.number)}/post-test`}
+                            className={`flex items-center hover:text-white ${isActive(`/lesson/${getLessonPath(lesson.number)}/post-test`) ? 'text-black' : preTestCompletion[lesson.number] ? '' : 'text-gray-400 cursor-not-allowed'}`}
+                            onClick={(e) => !preTestCompletion[lesson.number] && e.preventDefault()}
+                          >
                             <BoltIcon className="w-5 h-5 mr-2 flex-shrink-0" />
                             Post-test
                           </Link>

@@ -138,11 +138,7 @@ function Subtopic({ lessonNumber, subtopic }) {
   };
 
   const handleButtonClick = () => {
-    if (lessonNumber === "1" && currentIndex === 0) {
-      navigate(`/lesson/1/subtopic/2`);
-    } else {
-      navigate(`/lesson/${lessonNumber}/post-test`);
-    }
+    navigate(`/lesson/${lessonNumber}/practice`);
   };
 
   return (
@@ -229,7 +225,7 @@ function Subtopic({ lessonNumber, subtopic }) {
                   onClick={handleButtonClick}
                   className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                 >
-                  {lessonNumber === "1" && currentIndex === 0 ? "Next Topic" : "Take Post-Test"}
+                  Take Practice Questions
                 </button>
               </div>
             </div>
